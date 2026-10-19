@@ -1,0 +1,49 @@
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+# RISC-V Day MPW Project Configuration (inverter DUT)
+# LICENSE: Apache License Version 2.0
+# http://www.apache.org/licenses/
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+
+# ======================================================
+# Project metadata (used for documentation / review)
+# ======================================================
+project:
+  title: ""        # Project title
+  author: ""       # Your name
+  discord: ""      # Optional: Discord username (for support / communication)
+  description: ""  # Short one-line description
+
+# ======================================================
+# Layout (GDS) configuration
+# ======================================================
+gds:
+  # The top cell name is the DUT name "inv_dut_NNN".
+  # It is taken from the layout file name: src/inv_dut_NNN.gds
+  # (NNN = DUT_NUM in dut_params.csv)
+
+  # File extension of layout
+  extension: "gds"
+
+# ======================================================
+# LVS (Layout vs Schematic) configuration
+# ======================================================
+lvs:
+  # Reference netlist extension (LVS/inv_dut_NNN.<extension>, prepared for all DUTs)
+  extension: "cdl"
+
+  # If true → only generate extracted netlist (no comparison)
+  # If false → perform full LVS comparison
+  netlist_only: false
+
+# ======================================================
+# PDK configuration (DO NOT MODIFY unless necessary)
+# ======================================================
+pdk:
+  repo: "https://github.com/ishi-kai/gf180mcuD.git"
+  ref:  "RD_2611"      # Branch or tag (recommended: fixed tag for reproducibility)
+  dir:  "libs.tech" # Rule deck location inside PDK repo
+
+# ======================================================
+# Internal version (do not modify)
+# ======================================================
+yaml_version: 1

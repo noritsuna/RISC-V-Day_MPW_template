@@ -1,0 +1,8 @@
+* inv_dut_018 : CMOS inverter
+*   PMOS pfet_03v3 W=3.60u L=0.30u
+*   NMOS nfet_03v3 W=3.60u L=0.30u
+.SUBCKT inv_dut_018 VDD VSS A Q
+*.PININFO VDD:B VSS:B A:I Q:O
+MP0 Q A VDD VDD pfet_03v3 W=3.60u L=0.30u
+MN0 Q A VSS VSS nfet_03v3 W=3.60u L=0.30u
+.ENDS

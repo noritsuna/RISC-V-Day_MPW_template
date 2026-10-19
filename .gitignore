@@ -1,0 +1,8 @@
+.DS_Store
+gf180mcuD/
+run/
+scripts/__pycache__/
+*.lyrdb
+*.lvsdb
+*.extracted
+lvs_output.log

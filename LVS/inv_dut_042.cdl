@@ -1,0 +1,8 @@
+* inv_dut_042 : CMOS inverter
+*   PMOS pfet_05v0 W=7.20u L=1.20u
+*   NMOS nfet_05v0 W=3.60u L=1.20u
+.SUBCKT inv_dut_042 VDD VSS A Q
+*.PININFO VDD:B VSS:B A:I Q:O
+MP0 Q A VDD VDD pfet_05v0 W=7.20u L=1.20u
+MN0 Q A VSS VSS nfet_05v0 W=3.60u L=1.20u
+.ENDS

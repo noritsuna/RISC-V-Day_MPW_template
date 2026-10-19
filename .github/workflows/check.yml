@@ -1,0 +1,193 @@
+# Design-rule workflow
+# Runs KLayout-based DRC/LVS checks to validate the submitted inverter DUT layout
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+# Based on OpenSUSI TR-1um MPW template (jun1okamura <jun1okamura@gmail.com>)
+# LICENSE: Apache License Version 2.0, January 2004
+#          http://www.apache.org/licenses/
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  KLAYOUT_VERSION: "0.30.9"
+  PDK_CHECKOUT_DIR: "gf180mcuD"
+  # gf180mcuD: metal_top=11K, mim_option=B, metal_level=5LM
+  PDK_VARIANT: "gf180mcuD"
+  METAL_TOP: "11K"
+  METAL_LEVEL: "5LM"
+  MIM_OPTION: "B"
+  # Density rules are excluded, inverter DUT frame checks (inv_dut) are added
+  DRC_DECKS: "all,-density,inv_dut"
+
+jobs:
+  Precheck:
+    runs-on: ubuntu-latest
+    outputs:
+      top_cell: ${{ steps.cfg.outputs.top_cell }}
+      layout: ${{ steps.cfg.outputs.layout }}
+      circuit: ${{ steps.cfg.outputs.circuit }}
+      report: ${{ steps.cfg.outputs.report }}
+      lvs_report: ${{ steps.cfg.outputs.lvs_report }}
+      extracted: ${{ steps.cfg.outputs.extracted }}
+      lvs_flag: ${{ steps.cfg.outputs.lvs_flag }}
+      pdk_repo: ${{ steps.cfg.outputs.pdk_repo }}
+      pdk_ref: ${{ steps.cfg.outputs.pdk_ref }}
+      pdk_dir: ${{ steps.cfg.outputs.pdk_dir }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup KLayout
+        uses: ./.github/actions/setup-klayout
+        with:
+          klayout_version: ${{ env.KLAYOUT_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --user pyyaml click
+
+      - name: Read info.yaml
+        id: cfg
+        run: |
+          python3 scripts/read_info.py --info info.yaml --src src --lvs LVS
+
+      - name: Run pre_check.py
+        run: |
+          python3 scripts/pre_check.py \
+            --top "${{ steps.cfg.outputs.top_cell }}" \
+            "src/${{ steps.cfg.outputs.layout }}"
+
+      - name: Upload source GDSII artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GDSII_drawing
+          if-no-files-found: error
+          path: src/${{ steps.cfg.outputs.layout }}
+
+  DRC:
+    runs-on: ubuntu-latest
+    needs: Precheck
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup KLayout
+        uses: ./.github/actions/setup-klayout
+        with:
+          klayout_version: ${{ env.KLAYOUT_VERSION }}
+
+      - name: Checkout PDK ruleset
+        uses: ./.github/actions/checkout-pdk
+        with:
+          pdk_repo: ${{ needs.Precheck.outputs.pdk_repo }}
+          pdk_ref: ${{ needs.Precheck.outputs.pdk_ref }}
+          pdk_dir: ${{ needs.Precheck.outputs.pdk_dir }}
+          checkout_dir: ${{ env.PDK_CHECKOUT_DIR }}
+
+      - name: Run DRC (headless)
+        run: |
+          set -euo pipefail
+          klayout -b -r "${{ env.PDK_CHECKOUT_DIR }}/${{ needs.Precheck.outputs.pdk_dir }}/klayout/tech/drc/gf180mcu.drc" \
+            -rd input="${{ github.workspace }}/src/${{ needs.Precheck.outputs.layout }}" \
+            -rd topcell="${{ needs.Precheck.outputs.top_cell }}" \
+            -rd report="${{ github.workspace }}/src/${{ needs.Precheck.outputs.report }}" \
+            -rd variant="${{ env.PDK_VARIANT }}" \
+            -rd decks="${{ env.DRC_DECKS }}" \
+            -rd run_mode=deep \
+            -rd threads=max
+
+      - name: Upload DRC report
+        uses: actions/upload-artifact@v4
+        with:
+          name: DRC_report
+          if-no-files-found: error
+          path: src/${{ needs.Precheck.outputs.report }}
+
+      - name: Decide pass/fail by report (XML)
+        run: |
+          set -euo pipefail
+          if grep -q "<visited>false</visited>" "src/${{ needs.Precheck.outputs.report }}"; then
+            echo "DRC VIOLATIONS FOUND -> FAIL"
+            echo "---- violated rules ----"
+            grep -o "<category>[^<]*</category>" "src/${{ needs.Precheck.outputs.report }}" \
+              | sed -e 's/<[^>]*>//g' | sort | uniq -c || true
+            exit 1
+          fi
+
+  LVS:
+    runs-on: ubuntu-latest
+    needs: [Precheck, DRC]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup KLayout
+        uses: ./.github/actions/setup-klayout
+        with:
+          klayout_version: ${{ env.KLAYOUT_VERSION }}
+
+      - name: Checkout PDK ruleset
+        uses: ./.github/actions/checkout-pdk
+        with:
+          pdk_repo: ${{ needs.Precheck.outputs.pdk_repo }}
+          pdk_ref: ${{ needs.Precheck.outputs.pdk_ref }}
+          pdk_dir: ${{ needs.Precheck.outputs.pdk_dir }}
+          checkout_dir: ${{ env.PDK_CHECKOUT_DIR }}
+
+      - name: Run LVS (headless)
+        run: |
+          set -euo pipefail
+          NETLIST_FLAG=""
+          if [ -n "${{ needs.Precheck.outputs.lvs_flag }}" ]; then
+            NETLIST_FLAG="-rd net_only=true"
+          fi
+          klayout -b -r "${{ env.PDK_CHECKOUT_DIR }}/${{ needs.Precheck.outputs.pdk_dir }}/klayout/tech/lvs/gf180mcu.lvs" \
+            -rd input="${{ github.workspace }}/src/${{ needs.Precheck.outputs.layout }}" \
+            -rd topcell="${{ needs.Precheck.outputs.top_cell }}" \
+            -rd schematic="${{ github.workspace }}/${{ needs.Precheck.outputs.circuit }}" \
+            -rd report="${{ github.workspace }}/src/${{ needs.Precheck.outputs.lvs_report }}" \
+            -rd target_netlist="${{ github.workspace }}/src/${{ needs.Precheck.outputs.extracted }}" \
+            -rd metal_top="${{ env.METAL_TOP }}" \
+            -rd metal_level="${{ env.METAL_LEVEL }}" \
+            -rd mim_option="${{ env.MIM_OPTION }}" \
+            -rd run_mode=deep \
+            -rd combine=true \
+            ${NETLIST_FLAG} 2>&1 | tee lvs_output.log
+          if [ -z "${NETLIST_FLAG}" ] && ! grep -q "Congratulations! Netlists match." lvs_output.log; then
+            echo "LVS FAILED -> Netlists don't match"
+            exit 1
+          fi
+
+      - name: Upload LVS results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LVS_results
+          if-no-files-found: warn
+          path: |
+            src/${{ needs.Precheck.outputs.extracted }}
+            src/${{ needs.Precheck.outputs.lvs_report }}
+            lvs_output.log

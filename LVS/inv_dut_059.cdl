@@ -1,0 +1,8 @@
+* inv_dut_059 : CMOS inverter
+*   PMOS pfet_03v3 W=5.40u L=0.60u
+*   NMOS nfet_03v3 W=2.70u L=0.60u
+.SUBCKT inv_dut_059 VDD VSS A Q
+*.PININFO VDD:B VSS:B A:I Q:O
+MP0 Q A VDD VDD pfet_03v3 W=5.40u L=0.60u
+MN0 Q A VSS VSS nfet_03v3 W=2.70u L=0.60u
+.ENDS
